@@ -1,0 +1,62 @@
+---
+title: "About"
+output: 
+  rmdformats::html_clean
+---
+
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville&display=swap');
+
+h1.title {
+  margin-top: 100px;
+  font-weight: bold;
+}
+
+h1, h2, h3, body {
+  font-family: 'Lora',  serif;
+}
+
+#line {
+  width: 100%;
+  height: 3px;
+  background-color: #7136FA;
+  position:relative;
+}
+
+.project-button {
+  width: 100%;
+  font-size: 18px;
+  background-color: #7136FA;
+  color: #fff;
+  border:none;
+  padding: 5px 0px;
+  box-shadow: 0 3px 3px;
+}
+
+.project-button:hover {
+  background-color: #fff;
+  color: #7136FA;
+}
+
+.intro-text {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+</style>
+
+<div id = "line"></div>
+<p class= "intro-text">
+Welcome to my SQL Project Website! This is where you can find my SQL projects in their entirety.
+</p>
+
+<div class = "project-container">
+
+<form action="sql_project1.html">
+  <button class= "project-button">SQL Project 1: Investigating California High School Closures</button>
+</form>
+<p class= "project-text">
+An exploratory analysis that examines what kind of factors were associated with California high school closures during 2014-2015 school year. 
+</p>
+</div>

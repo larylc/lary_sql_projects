@@ -1,0 +1,251 @@
+---
+title: "Investigating California High School Closures"
+date: "2023-03-20"
+output: 
+  rmdformats::html_clean:
+    code_folding: show
+    df_print: paged
+---
+
+<style>
+
+h1, h2, h3 {
+  font-family: Lato;
+  font-weight: bold;
+}
+
+h1.title, #toc {
+  margin-top: 150px;
+}
+
+body {
+  font-family: 'Lora',  serif;
+}
+
+.red_text {
+font-weight: 800;
+color: #ff5349;
+}
+
+</style>
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+# Introduction 
+
+Using 2014-2015 data gathered from the [California Department of Education](https://www.cde.ca.gov/ds/si/ds/pubschls.asp), we will be using `R`, `Python`, and `SQL` to `gain insight into what kind of factors are associated with high school closures` in the state of California.
+
+The purpose of this brief analysis is to address the query above, generate ideas for more in depth analyses, and practice using R, Python, and SQL simultaneously.
+
+## Packages, Modules, and SQL Database Connection
+
+Load R packages.
+```{r message=FALSE, warning=FALSE}
+library(DBI)# Load the DBI package
+library(tidyverse)
+library(data.table)
+library(lubridate)
+library(reticulate)
+library(extrafont)
+library(knitr)
+library(extrafont)
+library(lattice)
+library(gridExtra)
+library(fuzzyjoin)
+library(formattable)
+library(leaflet)
+library(leaflet.extras)
+library(htmltools)
+library(knitr)
+
+use_python('C:/Users/laryl/AppData/Local/Programs/Python/Python311', required = TRUE)
+```
+
+Load Python Modules.
+```{python message=FALSE, warning=FALSE}
+import pandas as pd
+import numpy as np
+import pprint as pp
+from IPython.display import display
+import pingouin as pg
+from scipy.stats import t
+```
+
+Load SQLite connection and see the tables within the database. 
+```{r message=FALSE, warning=FALSE}
+library(RSQLite)
+schools <-  "C:/Users/laryl/Documents/data_work/data/cdeschools.sqlite"
+con <- DBI::dbConnect(RSQLite::SQLite(), dbname = schools)
+tables <-dbListTables(con)# Build a vector of the list of table names: tables
+tables
+```
+
+## Data Preparation
+
+Now we are going to Query all of the data we need from the SQLite database taking care to add and clean the columns we need.
+```{sql, connection = con, output.var= "ca_schools_data"}
+
+-- Join School table with Free-or-Reduced-Price Meal and SAT Score Tables while cleaning the data
+WITH combined_tables AS (
+SELECT School, StatusType, County, City, District,
+      Latitude, Longitude,OpenDate, ClosedDate, 
+      CAST(ClosedDate AS DATE) - CAST(OpenDate AS DATE) AS YearsOpen,  
+      COALESCE(FundingType, 'No Funding Info') AS FundingType,
+      [Academic Year], [Enrollment (K-12)], [Percent (%) Eligible Free (Ages 5-17)],[High Grade],
+      enroll12 , NumTstTakr, AvgScrRead, AvgScrWrite, AvgScrMath, PctGE1500
+FROM schools AS sl
+LEFT JOIN frpm AS fm
+ON School = [School Name] AND District = [District Name] AND County = [County Name]
+LEFT JOIN satscores AS ss
+ON School = sname AND District =dname  AND  County = cname)
+
+-- Take table from above and add combined SAT score column,  a difference from California Schools Average, and region column
+SELECT *,  (AvgScrRead + AvgScrWrite +AvgScrMath )  AS TotalScr,
+(AvgScrRead + AvgScrWrite +AvgScrMath ) - (SELECT  AVG(AvgScrRead + AvgScrWrite +AvgScrMath )FROM satscores) AS ScrDiff,
+  CASE WHEN County IN ('Butte', 'Colusa', 'El Dorado', 'Glenn', 'Lassen', 'Modoc', 'Nevada', 'Placer', 'Plumas', 'Sacramento', 'Shasta', 'Sierra', 'Siskiyou', 'Sutter', 'Tehama', 'Yolo', 'Yuba') THEN 'Superior California'
+  WHEN County IN ('Del Norte', 'Humboldt', 'Lake', 'Mendocino', 'Napa', 'Sonoma', 'Trinity') THEN 'North Coast'
+  WHEN County IN ('Alameda', 'Contra Costa', 'Marin', 'San Francisco', 'San Mateo', 'Santa Clara', 'Solano') THEN 'San Francisco Bay Area'
+  WHEN County IN ('Alpine', 'Amador', 'Calaveras', 'Madera', 'Mariposa', 'Merced', 'Mono', 'San Joaquin', 'Stanislaus', 'Tuolumne') THEN 'Northern San Joaquin Valley'
+  WHEN County IN ('Monterey', 'San Benito', 'San Luis Obispo', 'Santa Barbara', 'Santa Cruz', 'Ventura') THEN 'Central Coast'
+  WHEN County IN ('Fresno', 'Inyo', 'Kern', 'Kings', 'Tulare') THEN 'Southern San Joaquin Valley'
+  WHEN County IN ('Riverside', 'San Bernardino') THEN 'Inland Empire'
+  WHEN County IN ('Los Angeles') THEN 'Los Angeles'
+  WHEN County IN ('Orange') THEN 'Orange'
+  WHEN County IN ('Imperial', 'San Diego') THEN 'San Diego - Imperial' END
+  AS Region
+  FROM combined_tables
+```
+
+We will use python to filter the data for high schools (where grade 12 is the highest).
+```{python}
+ca_schools = r.ca_schools_data.replace(-2147483648, np.NaN)
+ca_schools_filtered = ca_schools[ca_schools["High Grade"] == '12']
+ca_schools_filtered.info()
+```
+# Exploratory Analysis 
+
+
+## Summarizing the Data
+There are **`r py$ca_schools_filtered %>% filter(StatusType == "Active")%>%nrow()`** active high schools and **`r py$ca_schools_filtered %>% filter(StatusType == "Closed")%>%nrow()`** closed high schools.
+
+We are focused on the `StatusType` column which has 2 main categories: *Active* and *Closed*. The other 2 categories were filtered out because there were too few schools or no high schools with those labels. Here is an overall summary of the average differences:
+```{python warning= FALSE, message= FALSE}
+status_summary = ca_schools_filtered.groupby('StatusType')[['FundingType']].value_counts(normalize=True).unstack().reset_index()
+status_summary_filtered = status_summary[status_summary["StatusType"] != "Merged"][['StatusType', 'Directly funded', 'Locally funded', 'No Funding Info']]
+funding_counts = ca_schools_filtered['StatusType'].value_counts().to_frame()
+
+ca_pivot_table= ca_schools_filtered.pivot_table(values= [ 'Enrollment (K-12)', 'enroll12', 'Percent (%) Eligible Free (Ages 5-17)', 
+ 'NumTstTakr', 'AvgScrRead', 'AvgScrWrite', 'AvgScrMath', 'TotalScr', 'ScrDiff', 'PctGE1500'], index= 'StatusType',  aggfunc= [np.mean] ).reset_index()
+
+ca_summary = ca_pivot_table[ca_pivot_table["StatusType"] != "Merged"].merge(status_summary_filtered, on = "StatusType", how = "left")
+
+ca_summary.drop(ca_summary.columns[[1]], axis=1, inplace=True)
+```
+```{r}
+py$ca_summary
+```
+
+From this table we can see clear differences in **SAT score related variables**, **enrollment related variables**, and  **funding related variables**.
+
+## Are These Significant Differences?
+
+Our next step in this exploratory analysis would be to choose some of the variables and test how significant the differences we observe are. The reason we are testing a 1 variable from the 3 types of variables is because these variables are probably correlated, so it doesn't make sense to check all of them when they would produce relatively similar results. Finding the most significant variables is beyond the scope of this brief analysis. To keep thing simple our alpha value will be 0.05.
+
+
+To check to see if there is a relationship between high school status and funding type, we are going to use a chi-square test of independence. 
+```{python warning= FALSE, message= FALSE }
+expected, observed, stats = pg.chi2_independence(ca_schools_filtered[ca_schools_filtered["StatusType"] != "Merged"],
+  x= 'StatusType',  
+  y= 'FundingType',
+correction=False)
+stats
+```
+Taking a look at the pval column from this table, there appears to be a significant association between status and funding. 
+
+Next, we are interested in performing a t-test to examine whether there is a statistically significant association between status and SAT score total. 
+```{python}
+x_bar_active=  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"]["TotalScr"].mean()
+x_bar_closed=  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"]["TotalScr"].mean()
+
+n_active=  len(ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"])
+n_closed=  len(ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"])
+
+s_active=  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"]["TotalScr"].std()
+s_closed=  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"]["TotalScr"].std()
+
+numerator =   x_bar_active - x_bar_closed
+denominator = np.sqrt(s_active **2 / n_active + s_closed **2 / n_closed)
+t_stat = numerator/denominator
+deg_freedom = n_active  + n_closed - 2
+print('p-value =', 1 - t.cdf(t_stat, df= deg_freedom))
+```
+Once again since the p-value falls below our significance threshold there is a evidence to support an association between status and SAT scores.
+
+Lastly, we are going to perform another t-test, this time, focusing on the relationship between status and enrollment of 12th graders.
+
+```{python}
+x_bar_active_takers =  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"]["enroll12"].mean()
+x_bar_closed_takers  =  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"]["enroll12"].mean()
+
+s_active_takers=  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"]["enroll12"].std()
+s_closed_takers=  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"]["enroll12"].std()
+
+numerator =   x_bar_active_takers - x_bar_closed_takers
+denominator = np.sqrt(s_active_takers **2 / n_active + s_closed_takers **2 / n_closed)
+t_stat_takers = numerator/denominator
+deg_freedom = n_active  + n_closed - 2
+print('p-value =' , 1 - t.cdf(t_stat_takers, df= deg_freedom))
+```
+Once again we got another p-value below 0.05. 
+
+# Recap and Way Forward  
+
+Funding, SAT scores, and enrollment are all associated with high school status. The typical closed school is more likely to directly funded than active school, have an average SAT Score that is **`r round(py$ca_schools_filtered%>%filter(StatusType == "Closed")%>%summarize(mean_diff= mean(ScrDiff, na.rm= TRUE))%>%pull(),0)*-1` points** less than the overall California average, and have less students than other schools. Closed schools stayed open on average for about
+**`r round(py$ca_schools_filtered%>%filter(StatusType == "Closed")%>%summarize(mean_years= mean(YearsOpen, na.rm= TRUE))%>%pull(),0)` years**.  
+
+The time sensitivity for this project did prevent deeper dives into the data. For example, education type (like SOCType and Educational Option Type) could have been another factor that affects school status. The education types were not explored because they had numerous categories and it would have taken much more time to sort through. Additionally, school locations could be associated with school closures. Here is a map of all of the school <p class= "red_text">closures in red</p> . 
+
+```{r, out.width='100%', fig.align='center', fig.align='center', warning=FALSE, message=FALSE}
+active_ca_schools <- py$ca_schools_filtered%>%
+  filter(StatusType == "Active")
+
+closed_ca_schools <- py$ca_schools_filtered%>%
+  filter(StatusType == "Closed")
+
+map <- leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addCircleMarkers(data = active_ca_schools,
+                   radius = 1, 
+                   color = "#8C92AC", 
+                   label = ~htmlEscape(active_ca_schools[["School"]])) %>%
+    addCircleMarkers(data = closed_ca_schools,
+                   radius = 1, 
+                   color = "#ff5349", 
+                   label = ~htmlEscape(closed_ca_schools[["School"]]))%>%
+  setView(lat = 37.56258, lng = -121.9656, zoom = 5.5) 
+
+map
+```
+Here is a table summarizing the active and closed schools by regions (created using the counties from the original data). 
+```{python}
+#ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"]['Region'].value_counts()
+#ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"]['Region'].value_counts()
+
+ca_schools_filtered[ca_schools_filtered['StatusType'].isin(["Closed","Active"])].groupby('Region')[['StatusType']].value_counts().unstack().sort_values("Active")
+```
+ Regions with more schools tend to have more closures. However, there maybe a relationship between status and particular regions. Additionally, there is the possibility that regions as variable is too broad to show more granular county, city, or district patterns. It would be interesting to combine this data with wealth data gathered from external sources.
+ 
+Finally, using the findings from above, an interesting future project could attempt to better identify which specific variables among the 3 categories. These variables could then used to create a multiple logistic regression model that could help predict school closures for future years.  
+
+```{r echo=FALSE}
+dbDisconnect(con)
+```
+
+
+# Sources 
++ If you want more information check out my [GitHub](https://github.com/larylc/lary.sqlprojects.io)
++ You can find the SQL data [here](http://2016.padjo.org/tutorials/sqlite-data-starterpacks/#toc-salaries-of-city-officials-from-the-california-peninsula) 
++ The regions were created using this [source](https://census.ca.gov/regions/)
+

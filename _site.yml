@@ -1,0 +1,14 @@
+name: "Cedric's SQL Projects"
+output_dir: "."
+navbar:
+  title: "Cedric's SQL Projects"
+  left: 
+    - text: "About"
+      href: index.html
+    - text: "SQL Project 1 (2023)"
+      href: sql_project1.html
+    - text: "Other Projects"
+      href: https://cedriclary.netlify.app/projects.html
+  output: 
+    html_document:
+      theme: cosmo
