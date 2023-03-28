@@ -1,4 +1,4 @@
-## [Cedric's SQL Projects](https://github.com/larylc/lary_sql_projects/)
+## [Cedric's SQL Projects](https://larylc.github.io/lary_sql_projects/index.html)
 
 ### SQL Project 1: Investigating California High School Closures
 
