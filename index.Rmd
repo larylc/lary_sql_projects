@@ -59,6 +59,6 @@ Welcome to my SQL Project Website! This is where you can find my SQL projects in
   <button class= "project-button">SQL Project 1: Investigating California High School Closures</button>
 </form>
 <p class= "project-text">
-An exploratory analysis that examines what kind of factors were associated with California high school closures during 2014-2015 school year. 
+An exploratory analysis that examines what kind of factors were associated with California high school closures during the 2014-2015 school year. 
 </p>
 </div>
