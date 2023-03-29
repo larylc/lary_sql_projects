@@ -51,6 +51,8 @@ h1, h2, h3, body {
 Welcome to my SQL Project Website! This is where you can find my SQL projects in their entirety.
 </p>
 
+## List of Projects
+
 <div class = "project-container">
 
 <form action="sql_project1.html">
