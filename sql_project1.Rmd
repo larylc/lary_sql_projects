@@ -84,10 +84,10 @@ tables
 
 ## Data Preparation
 
-Now we are going to Query all of the data we need from the SQLite database taking care to add and clean the columns we need.
+Now we are going to query all of the data we need from the SQLite database taking care to add and clean the columns we need.
 ```{sql, connection = con, output.var= "ca_schools_data"}
 
--- Join School table with Free-or-Reduced-Price Meal and SAT Score Tables while cleaning the data
+-- Join School table with Free-or-Reduced-Price Meal and SAT Score tables while cleaning the data
 WITH combined_tables AS (
 SELECT School, StatusType, County, City, District,
       Latitude, Longitude,OpenDate, ClosedDate, 
@@ -101,7 +101,7 @@ ON School = [School Name] AND District = [District Name] AND County = [County Na
 LEFT JOIN satscores AS ss
 ON School = sname AND District =dname  AND  County = cname)
 
--- Take table from above and add combined SAT score column,  a difference from California Schools Average, and region column
+-- Take table from above and add combined SAT score column,  a difference from California Schools SAT Average column, and a region column
 SELECT *,  (AvgScrRead + AvgScrWrite +AvgScrMath )  AS TotalScr,
 (AvgScrRead + AvgScrWrite +AvgScrMath ) - (SELECT  AVG(AvgScrRead + AvgScrWrite +AvgScrMath )FROM satscores) AS ScrDiff,
   CASE WHEN County IN ('Butte', 'Colusa', 'El Dorado', 'Glenn', 'Lassen', 'Modoc', 'Nevada', 'Placer', 'Plumas', 'Sacramento', 'Shasta', 'Sierra', 'Siskiyou', 'Sutter', 'Tehama', 'Yolo', 'Yuba') THEN 'Superior California'
@@ -128,9 +128,9 @@ ca_schools_filtered.info()
 
 
 ## Summarizing the Data
-There are **`r py$ca_schools_filtered %>% filter(StatusType == "Active")%>%nrow()`** active high schools and **`r py$ca_schools_filtered %>% filter(StatusType == "Closed")%>%nrow()`** closed high schools.
+During the 2014-2015 school year there were **`r py$ca_schools_filtered %>% filter(StatusType == "Active")%>%nrow()`** active high schools and **`r py$ca_schools_filtered %>% filter(StatusType == "Closed")%>%nrow()`** high schools that were closed.
 
-We are focused on the `StatusType` column which has 2 main categories: *Active* and *Closed*. The other 2 categories were filtered out because there were too few schools or no high schools with those labels. Here is an overall summary of the average differences:
+We are focused on the `StatusType` column which has 2 main categories: **Active** and **Closed**. The other 2 categories were filtered out because there were too few schools or no high schools with those labels. Here is an overall summary of the average differences:
 ```{python warning= FALSE, message= FALSE}
 status_summary = ca_schools_filtered.groupby('StatusType')[['FundingType']].value_counts(normalize=True).unstack().reset_index()
 status_summary_filtered = status_summary[status_summary["StatusType"] != "Merged"][['StatusType', 'Directly funded', 'Locally funded', 'No Funding Info']]
@@ -147,14 +147,14 @@ ca_summary.drop(ca_summary.columns[[1]], axis=1, inplace=True)
 py$ca_summary
 ```
 
-From this table we can see clear differences in **SAT score related variables**, **enrollment related variables**, and  **funding related variables**.
+From this table we can see clear differences in **SAT score-related variables**, **enrollment-related variables**, and  **funding-related variables**.
 
 ## Are These Significant Differences?
 
-Our next step in this exploratory analysis would be to choose some of the variables and test how significant the differences we observe are. The reason we are testing a 1 variable from the 3 types of variables is because these variables are probably correlated, so it doesn't make sense to check all of them when they would produce relatively similar results. Finding the most significant variables is beyond the scope of this brief analysis. To keep thing simple our alpha value will be 0.05.
+Our next step in this exploratory analysis would be to choose some of the variables and test how significant the differences are. The reason we are testing 1 variable from each of the 3 types of variables is because these variables are probably correlated. It doesn't make sense to check all of them when they would produce relatively similar results. Finding the most significant variables is beyond the scope of this brief analysis. To keep things simple, our alpha value will be 0.05.
 
 
-To check to see if there is a relationship between high school status and funding type, we are going to use a chi-square test of independence. 
+To check if there is a relationship between high school status and funding type, we are going to use a chi-square test of independence. 
 ```{python warning= FALSE, message= FALSE }
 expected, observed, stats = pg.chi2_independence(ca_schools_filtered[ca_schools_filtered["StatusType"] != "Merged"],
   x= 'StatusType',  
@@ -181,10 +181,9 @@ t_stat = numerator/denominator
 deg_freedom = n_active  + n_closed - 2
 print('p-value =', 1 - t.cdf(t_stat, df= deg_freedom))
 ```
-Once again since the p-value falls below our significance threshold there is a evidence to support an association between status and SAT scores.
+Once again since the p-value falls below our significance threshold, there is evidence to support an association between status and SAT scores.
 
 Lastly, we are going to perform another t-test, this time, focusing on the relationship between status and enrollment of 12th graders.
-
 ```{python}
 x_bar_active_takers =  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Active"]["enroll12"].mean()
 x_bar_closed_takers  =  ca_schools_filtered[ca_schools_filtered['StatusType'] == "Closed"]["enroll12"].mean()
@@ -202,10 +201,10 @@ Once again we got another p-value below 0.05.
 
 # Recap and Way Forward  
 
-Funding, SAT scores, and enrollment are all associated with high school status. The typical closed school is more likely to directly funded than active school, have an average SAT Score that is **`r round(py$ca_schools_filtered%>%filter(StatusType == "Closed")%>%summarize(mean_diff= mean(ScrDiff, na.rm= TRUE))%>%pull(),0)*-1` points** less than the overall California average, and have less students than other schools. Closed schools stayed open on average for about
+Funding, SAT scores, and enrollment are all associated with high school status. The average closed school is more likely to be directly funded, have an average SAT Score that is **`r round(py$ca_schools_filtered%>%filter(StatusType == "Closed")%>%summarize(mean_diff= mean(ScrDiff, na.rm= TRUE))%>%pull(),0)*-1` points** less than the overall California average, and have less students than active schools. Closed schools stayed open on average for about
 **`r round(py$ca_schools_filtered%>%filter(StatusType == "Closed")%>%summarize(mean_years= mean(YearsOpen, na.rm= TRUE))%>%pull(),0)` years**.  
 
-The time sensitivity for this project did prevent deeper dives into the data. For example, education type (like SOCType and Educational Option Type) could have been another factor that affects school status. The education types were not explored because they had numerous categories and it would have taken much more time to sort through. Additionally, school locations could be associated with school closures. Here is a map of all of the school <p class= "red_text">closures in red</p> . 
+The time sensitivity for this project did prevent deeper dives into the data. For example, education type (like SOCType and Educational Option Type) could have been another factors that affect school status. The education types were not explored because they had numerous categories and would have taken much more time to sort through. Additionally, school locations could be associated with school closures as well. Here is a map of all of the school <p class= "red_text">closures in red</p> . 
 
 ```{r, out.width='100%', fig.align='center', fig.align='center', warning=FALSE, message=FALSE}
 active_ca_schools <- py$ca_schools_filtered%>%
@@ -235,17 +234,17 @@ Here is a table summarizing the active and closed schools by regions (created us
 
 ca_schools_filtered[ca_schools_filtered['StatusType'].isin(["Closed","Active"])].groupby('Region')[['StatusType']].value_counts().unstack().sort_values("Active")
 ```
- Regions with more schools tend to have more closures. However, there maybe a relationship between status and particular regions. Additionally, there is the possibility that regions as variable is too broad to show more granular county, city, or district patterns. It would be interesting to combine this data with wealth data gathered from external sources.
+Although regions with more schools tend to have more closures, particular regions could be more susceptible to school closures than others. Moreover, there is a possibility that regions as variable is too broad to show more granular county, city, or district patterns. It would be interesting to combine this data with wealth data gathered from external sources.
  
-Finally, using the findings from above, an interesting future project could attempt to better identify which specific variables among the 3 categories. These variables could then used to create a multiple logistic regression model that could help predict school closures for future years.  
-
+Finally, using the findings from above, an interesting future project could attempt to better identify which specific variables among the 3 categories are the most statistically significant. These variables could then be used to create a multiple logistic regression model that could help predict school closures for future years.  
 ```{r echo=FALSE}
 dbDisconnect(con)
 ```
 
 
 # Sources 
-+ If you want more information check out my [GitHub](https://github.com/larylc/lary_sql_projects)
-+ You can find the SQL data [here](http://2016.padjo.org/tutorials/sqlite-data-starterpacks/#toc-salaries-of-city-officials-from-the-california-peninsula) 
-+ The regions were created using this [source](https://census.ca.gov/regions/)
+
++ If you want more information check out my [GitHub](https://github.com/larylc/lary_sql_projects).
++ You can find the SQL data [here](http://2016.padjo.org/tutorials/sqlite-data-starterpacks/#toc-salaries-of-city-officials-from-the-california-peninsula).
++ The regions were created using this [source](https://census.ca.gov/regions/).
 
